@@ -457,8 +457,18 @@ export default function App() {
         selectedElement={selectedElement}
         onQuickLengthen={(delta) => {
           if (selectedElement) {
-            const currentM = getLineLengthInfo(selectedElement)?.lengthMeters || 0;
-            handleResizeLine(selectedElement.id, Math.max(0.5, currentM + delta));
+            const currentInfo = getLineLengthInfo(selectedElement);
+            const currentM = currentInfo?.lengthMeters || 0;
+            const newM = Math.max(0.5, Math.round((currentM + delta) * 10) / 10);
+            const prefix = currentInfo?.prefix || (selectedElement.soilType && selectedElement.soilType !== 'NONE' ? `${selectedElement.soilType} ` : '');
+            const newLabel = `${prefix}${newM.toFixed(1)}M`;
+            const updated = elements.map((item) =>
+              item.id === selectedElement.id
+                ? { ...item, label: newLabel }
+                : item
+            );
+            setElements(updated);
+            handleElementsChange(updated);
           }
         }}
         zoom={zoom}

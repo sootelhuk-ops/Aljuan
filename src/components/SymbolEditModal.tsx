@@ -21,6 +21,8 @@ export const SymbolEditModal: React.FC<SymbolEditModalProps> = ({
   const [fontSize, setFontSize] = useState(12);
   const [subTop, setSubTop] = useState('');
   const [subBottom, setSubBottom] = useState('');
+  const [seg1, setSeg1] = useState('');
+  const [seg2, setSeg2] = useState('');
 
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -36,6 +38,13 @@ export const SymbolEditModal: React.FC<SymbolEditModalProps> = ({
       setFontSize(element.fontSize ?? 12);
       setSubTop(element.subscriptionTop || (initialLabel.split('/')[0]) || '2658');
       setSubBottom(element.subscriptionBottom || (initialLabel.split('/')[1]) || '3853');
+      if (element.segmentLabels && element.segmentLabels.length > 0) {
+        setSeg1(element.segmentLabels[0] || '');
+        setSeg2(element.segmentLabels[1] || '');
+      } else {
+        setSeg1(initialLabel);
+        setSeg2('');
+      }
 
       // Autofocus input after opening
       setTimeout(() => {
@@ -50,8 +59,13 @@ export const SymbolEditModal: React.FC<SymbolEditModalProps> = ({
   if (!isOpen || !element) return null;
 
   const isSubscription = element.symbolKind === 'subscription';
+  const isCable = element.type === 'line' || element.type === 'polyline' || element.type === 'dimension';
+  const isPolyline = element.type === 'polyline' && !!element.points && element.points.length >= 2;
 
   const getSymbolTitle = () => {
+    if (isCable) {
+      return isPolyline ? 'تحرير أرقام وأطوال كيبل L (متعامد 90°)' : 'تحرير رقم وطول الكيبل المكتوب';
+    }
     switch (element.symbolKind) {
       case 'sp':
         return 'نقطة خدمة SP';
@@ -72,6 +86,9 @@ export const SymbolEditModal: React.FC<SymbolEditModalProps> = ({
   };
 
   const getPresets = () => {
+    if (isCable) {
+      return ['AS 45.0M', 'NG 2.30M', 'AS 6.0M', 'AS 4.0M', 'NG 15.0M', 'T 5.0M', 'كشط 10.0M', '45M', '6M', '15M', '2.3M'];
+    }
     switch (element.symbolKind) {
       case 'sp':
         return ['SP', 'SP 1', 'SP 2', 'SP 101', 'SP 102', 'نقطة تغذية'];
@@ -101,11 +118,20 @@ export const SymbolEditModal: React.FC<SymbolEditModalProps> = ({
       finalLabel = trimmed || `${top}/${btm}`;
     }
 
+    let nextSegmentLabels = element.segmentLabels;
+    if (isPolyline) {
+      const s1 = seg1.trim() || trimmed || 'AS45.0M';
+      const s2 = seg2.trim() || 'NG2.30M';
+      nextSegmentLabels = [s1, s2];
+      finalLabel = s1;
+    }
+
     const updated: CanvasElement = {
       ...element,
       label: finalLabel,
       text: finalLabel,
       symbolName: finalLabel,
+      segmentLabels: nextSegmentLabels,
       labelPosition: position,
       isBoxed,
       fontSize,
@@ -145,8 +171,12 @@ export const SymbolEditModal: React.FC<SymbolEditModalProps> = ({
               <Tag className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="font-bold text-sm text-white">تعديل اسم أو رقم الرمز</h3>
-              <p className="text-[11px] text-amber-300 font-medium">{getSymbolTitle()}</p>
+              <h3 className="font-bold text-sm text-white">
+                {isCable ? 'تعديل الرقم المكتوب على الكيبل' : 'تعديل اسم أو رقم الرمز'}
+              </h3>
+              <p className="text-[11px] text-amber-300 font-medium">
+                {isCable ? 'سحب الكيبل وزيادة الطول لا يؤثر على هذا الرقم المكتوب' : getSymbolTitle()}
+              </p>
             </div>
           </div>
           <button
@@ -222,6 +252,48 @@ export const SymbolEditModal: React.FC<SymbolEditModalProps> = ({
                   />
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* If Cable or Polyline: show helpful note and separate segment inputs */}
+          {isCable && (
+            <div className="bg-amber-50/80 border border-amber-200 rounded-xl p-3 space-y-2">
+              <div className="flex items-center gap-1.5 text-amber-900 font-bold text-xs">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span>رقم وطول الكيبل المساحي:</span>
+              </div>
+              <p className="text-[11px] text-amber-800 leading-relaxed font-medium">
+                🔒 سحب الكيبل وزيادة طوله بالماوس على المخطط لا يغير هذا الرقم المكتوب، ويمكنك كتابة أي رقم تريده هنا بحرية تامة.
+              </p>
+
+              {isPolyline && (
+                <div className="grid grid-cols-2 gap-2 pt-1 border-t border-amber-200">
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                      طول المقطع 1 (مثال AS 45.0M):
+                    </label>
+                    <input
+                      type="text"
+                      value={seg1}
+                      onChange={(e) => setSeg1(e.target.value)}
+                      placeholder="AS 45.0M"
+                      className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-mono font-bold text-xs text-amber-950 focus:ring-2 focus:ring-amber-500 outline-hidden"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                      طول المقطع 2 (مثال NG 2.30M):
+                    </label>
+                    <input
+                      type="text"
+                      value={seg2}
+                      onChange={(e) => setSeg2(e.target.value)}
+                      placeholder="NG 2.30M"
+                      className="w-full bg-white border border-amber-300 rounded-lg px-2.5 py-1.5 font-mono font-bold text-xs text-amber-950 focus:ring-2 focus:ring-amber-500 outline-hidden"
+                    />
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

@@ -1507,40 +1507,57 @@ export const CadToolbar: React.FC<CadToolbarProps> = ({
             <Compass className="w-4 h-4" />
           </button>
 
-          {/* Quick Line Length Adjuster when a line is selected */}
+          {/* Quick Line / Cable Length Adjuster when a line or polyline is selected */}
           {selectedElement &&
-            (selectedElement.type === 'line' || selectedElement.type === 'dimension') &&
-            onQuickLengthen && (
+            (selectedElement.type === 'line' ||
+              selectedElement.type === 'polyline' ||
+              selectedElement.type === 'dimension') && (
               <>
                 <span className="w-px h-5 bg-slate-700 mx-1" />
-                <div className="flex items-center gap-1 bg-slate-900 border border-blue-500/50 rounded-lg px-2 py-0.5">
-                  <span className="text-[11px] text-slate-400">الطول:</span>
+                <div className="flex items-center gap-1.5 bg-slate-900 border border-blue-500/50 rounded-lg px-2 py-0.5">
+                  <span className="text-[11px] text-slate-400">الرقم المكتوب على الكيبل:</span>
                   <span className="font-mono font-bold text-amber-300 text-xs px-1">
-                    {selectedElement.label || ''}
+                    {selectedElement.segmentLabels && selectedElement.segmentLabels.length > 0
+                      ? selectedElement.segmentLabels.join(' + ')
+                      : selectedElement.label || ''}
                   </span>
-                  <div className="flex items-center gap-0.5 mr-1 border-r border-slate-700 pr-1">
-                    <button
-                      onClick={() => onQuickLengthen(1)}
-                      className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded text-[11px]"
-                      title="زيادة طول الخط متر واحد (+1M)"
-                    >
-                      +1م
-                    </button>
-                    <button
-                      onClick={() => onQuickLengthen(5)}
-                      className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold rounded text-[11px]"
-                      title="زيادة طول الخط 5 أمتار (+5M)"
-                    >
-                      +5م
-                    </button>
-                    <button
-                      onClick={() => onQuickLengthen(-1)}
-                      className="px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 font-bold rounded text-[11px]"
-                      title="إنقاص متر واحد (-1M)"
-                    >
-                      -1م
-                    </button>
-                  </div>
+
+                  {/* Direct button to edit the written number as needed without affecting drawing */}
+                  <button
+                    type="button"
+                    onClick={() => onEditSymbolName?.(selectedElement)}
+                    className="flex items-center gap-1 px-2 py-0.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black rounded text-[11px] transition-all shadow-xs"
+                    title="تعديل الرقم المكتوب على الكيبل حسب الحاجة (سحب الكيبل لا يؤثر على هذا الرقم)"
+                  >
+                    <span>✏️</span>
+                    <span>تحرير الرقم</span>
+                  </button>
+
+                  {onQuickLengthen && (
+                    <div className="flex items-center gap-0.5 mr-1 border-r border-slate-700 pr-1">
+                      <button
+                        onClick={() => onQuickLengthen(1)}
+                        className="px-1.5 py-0.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-bold rounded text-[11px]"
+                        title="زيادة الرقم المكتوب بمقدار متر واحد (+1M)"
+                      >
+                        +1م
+                      </button>
+                      <button
+                        onClick={() => onQuickLengthen(5)}
+                        className="px-1.5 py-0.5 bg-indigo-600 hover:bg-indigo-500 active:scale-95 text-white font-bold rounded text-[11px]"
+                        title="زيادة الرقم المكتوب بمقدار 5 أمتار (+5M)"
+                      >
+                        +5م
+                      </button>
+                      <button
+                        onClick={() => onQuickLengthen(-1)}
+                        className="px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-300 font-bold rounded text-[11px]"
+                        title="إنقاص الرقم المكتوب بمقدار متر واحد (-1M)"
+                      >
+                        -1م
+                      </button>
+                    </div>
+                  )}
                 </div>
               </>
             )}

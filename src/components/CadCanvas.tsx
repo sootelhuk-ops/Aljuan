@@ -309,35 +309,58 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
     const trimmed = rawText.trim();
     if (!trimmed) return;
 
-    const matchNumber = trimmed.match(/(\d+(\.\d+)?)/);
-    const parsedMeters = matchNumber ? parseFloat(matchNumber[1]) : null;
+    // 1. Check if editing a polyline segment label (e.g. "cable-l-123-seg-0")
+    if (lineId.includes('-seg-')) {
+      const parts = lineId.split('-seg-');
+      const elemId = parts[0];
+      const segIndex = parseInt(parts[1], 10);
 
-    let detectedSoil: SoilType | undefined = soilType;
-    const upper = trimmed.toUpperCase();
-    if (upper.includes('AS')) detectedSoil = 'AS';
-    else if (upper.includes('NG')) detectedSoil = 'NG';
-    else if (upper.includes('T')) detectedSoil = 'T';
-
-    if (parsedMeters && parsedMeters > 0) {
       const updated = elements.map((item) => {
-        if (item.id === lineId) {
-          const resized = resizeLineElement([item], lineId, parsedMeters, {
-            anchor: 'start',
-            updateLabel: false,
-            moveConnectedSymbols: true,
-          })[0];
+        if (item.id === elemId && item.segmentLabels) {
+          const nextSegLabels = [...item.segmentLabels];
+          nextSegLabels[segIndex] = trimmed;
           return {
-            ...resized,
-            soilType: detectedSoil || item.soilType,
-            label: formatLineLabel(parsedMeters, detectedSoil || item.soilType),
+            ...item,
+            segmentLabels: nextSegLabels,
+            label: segIndex === 0 ? trimmed : item.label,
           };
         }
         return item;
       });
       setElements(updated);
       onElementsChange?.(updated);
-      // Trench and soil lengths in header are preserved and edited manually
+      return;
     }
+
+    // 2. Straight line / cable: update the written number on the cable without mutating canvas coordinates
+    let detectedSoil: SoilType | undefined = soilType;
+    const upper = trimmed.toUpperCase();
+    if (upper.includes('AS')) detectedSoil = 'AS';
+    else if (upper.includes('NG')) detectedSoil = 'NG';
+    else if (upper.includes('T')) detectedSoil = 'T';
+    else if (trimmed.includes('كشط')) detectedSoil = 'KASHT';
+
+    // Format if user typed a bare number like "45" or "2.3"
+    let formattedLabel = trimmed;
+    const isBareNumber = /^\d+(\.\d+)?$/.test(trimmed);
+    if (isBareNumber) {
+      const prefix = detectedSoil || soilType || 'AS';
+      const pStr = prefix === 'KASHT' ? 'كشط ' : prefix === 'NONE' ? '' : `${prefix} `;
+      formattedLabel = `${pStr}${trimmed}M`;
+    }
+
+    const updated = elements.map((item) => {
+      if (item.id === lineId) {
+        return {
+          ...item,
+          soilType: detectedSoil || item.soilType,
+          label: formattedLabel,
+        };
+      }
+      return item;
+    });
+    setElements(updated);
+    onElementsChange?.(updated);
   };
 
   const snapCoord = (val: number, step = 10): number => {
@@ -905,11 +928,15 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
               y: activeGrip === 'start' ? movedPoint.y : item.y,
               x2: activeGrip === 'end' ? movedPoint.x : item.x2,
               y2: activeGrip === 'end' ? movedPoint.y : item.y2,
-              label: formatLineLabel(
-                newDistMeters,
-                item.soilType,
-                getLineLengthInfo(item)?.prefix
-              ),
+              // Preserving the written number as requested:
+              label:
+                item.label !== undefined && item.label !== ''
+                  ? item.label
+                  : formatLineLabel(
+                      newDistMeters,
+                      item.soilType,
+                      getLineLengthInfo(item)?.prefix
+                    ),
             };
           }
 
@@ -957,7 +984,7 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
         const m1 = Math.max(0.5, Math.round((dist1 / PIXELS_PER_METER) * 10) / 10);
         const m2 = Math.max(0.5, Math.round((dist2 / PIXELS_PER_METER) * 10) / 10);
         const soil = initLine.soilType || 'AS';
-        const label1 = `${soil === 'NONE' ? '' : `${soil} `}${m1.toFixed(1)}M`;
+        const label1 = initLine.label || `${soil === 'NONE' ? '' : `${soil} `}${m1.toFixed(1)}M`;
         const label2 = `${soil === 'NONE' ? '' : `${soil} `}${m2.toFixed(1)}M`;
 
         const updated = elements.map((item) => {
@@ -1000,15 +1027,17 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
         }
         nextPoints[ptIdx] = movedPt;
 
-        // Recalculate lengths of each segment
+        // Preserve written segment numbers so dragging the cable does not alter the written numbers!
         const segLabels = (target.segmentLabels || []).slice();
         for (let i = 0; i < nextPoints.length - 1; i++) {
-          const pA = nextPoints[i];
-          const pB = nextPoints[i + 1];
-          const dist = Math.hypot(pB.x - pA.x, pB.y - pA.y);
-          const m = Math.max(0.1, Math.round((dist / PIXELS_PER_METER) * 10) / 10);
-          const soil = (target.segmentSoilTypes && target.segmentSoilTypes[i]) || target.soilType || 'AS';
-          segLabels[i] = `${soil === 'NONE' ? '' : `${soil} `}${m.toFixed(1)}M`;
+          if (!segLabels[i]) {
+            const pA = nextPoints[i];
+            const pB = nextPoints[i + 1];
+            const dist = Math.hypot(pB.x - pA.x, pB.y - pA.y);
+            const m = Math.max(0.1, Math.round((dist / PIXELS_PER_METER) * 10) / 10);
+            const soil = (target.segmentSoilTypes && target.segmentSoilTypes[i]) || target.soilType || 'AS';
+            segLabels[i] = `${soil === 'NONE' ? '' : `${soil} `}${m.toFixed(1)}M`;
+          }
         }
 
         const updated = elements.map((item) =>
@@ -1017,7 +1046,7 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
                 ...item,
                 points: nextPoints,
                 segmentLabels: segLabels,
-                label: segLabels[0],
+                label: segLabels[0] || item.label,
               }
             : item
         );
@@ -1824,12 +1853,7 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
                           autoFocus
                           value={editingLineText}
                           onChange={(e) => {
-                            const val = e.target.value;
-                            setEditingLineText(val);
-                            const parsed = parseFloat(val.replace(/[^0-9.]/g, ''));
-                            if (!isNaN(parsed) && parsed > 0 && parsed <= 500) {
-                              handleDirectLineLengthChange(el.id, parsed, el.soilType);
-                            }
+                            setEditingLineText(e.target.value);
                           }}
                           onBlur={() => {
                             handleCommitLineLength(el.id, editingLineText, el.soilType);
@@ -1914,15 +1938,16 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
                           const m1 = (Math.hypot(p1.x - p0.x, p1.y - p0.y) / PIXELS_PER_METER).toFixed(1);
                           const m2 = (Math.hypot(p2.x - p1.x, p2.y - p1.y) / PIXELS_PER_METER).toFixed(1);
                           const soil = el.soilType || 'AS';
+                          const firstLabel = el.label || `${soil} ${m1}M`;
                           const updated: CanvasElement[] = elements.map((item) =>
                             item.id === el.id
                               ? {
                                   ...item,
                                   type: 'polyline' as const,
                                   points: [p0, p1, p2],
-                                  segmentLabels: [`${soil} ${m1}M`, `${soil} ${m2}M`],
+                                  segmentLabels: [firstLabel, `${soil} ${m2}M`],
                                   segmentSoilTypes: [soil, soil],
-                                  label: `${soil} ${m1}M`,
+                                  label: firstLabel,
                                 }
                               : item
                           );
@@ -1988,7 +2013,8 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
                     </g>
 
                     {/* Midpoint Elbow Grip to bend line into vertical + horizontal segments */}
-                    <g className="cursor-pointer group" title="اسحب مقبض الانحناء لثني الكيبل بزاوية 90°">
+                    <g className="cursor-pointer group">
+                      <title>اسحب مقبض الانحناء لثني الكيبل بزاوية 90°</title>
                       <circle
                         cx={midX}
                         cy={midY}
@@ -2087,41 +2113,98 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
                         data-element-id={el.id}
                         className="cursor-move"
                       />
-                      {/* Segment length label aligned beside each segment */}
-                      <g
-                        transform={`translate(${labelX}, ${labelY}) rotate(${textAngle})`}
-                        className="cursor-pointer select-none"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedElementId(el.id);
-                          setEditingLineId(`${el.id}-seg-${i}`);
-                          setEditingLineText(segLabel);
-                        }}
-                      >
-                        <text
-                          x={0}
-                          y={0}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          stroke="#ffffff"
-                          strokeWidth={3}
-                          strokeLinejoin="round"
-                          className="font-mono font-bold text-[12px] select-none"
+                      {/* Segment length label aligned beside each segment with inline editing */}
+                      {editingLineId === `${el.id}-seg-${i}` ? (
+                        <foreignObject
+                          transform={`translate(${labelX}, ${labelY})`}
+                          x={-60}
+                          y={-14}
+                          width={120}
+                          height={30}
+                          className="overflow-visible pointer-events-auto"
+                          onClick={(e) => e.stopPropagation()}
+                          onMouseDown={(e) => e.stopPropagation()}
                         >
-                          {segLabel}
-                        </text>
-                        <text
-                          x={0}
-                          y={0}
-                          textAnchor="middle"
-                          dominantBaseline="central"
-                          fill={segSoil === 'NG' ? '#854d0e' : segSoil === 'T' ? '#065f46' : '#000000'}
-                          className="font-mono font-bold text-[12px] select-none tracking-tight hover:fill-blue-600 transition-colors"
-                          data-element-id={el.id}
+                          <div className="flex items-center justify-center w-full h-full">
+                            <div className="flex items-center gap-1 px-1.5 py-0.5 rounded shadow-lg border bg-white border-blue-600 ring-2 ring-blue-500/25">
+                              <input
+                                type="text"
+                                autoFocus
+                                value={editingLineText}
+                                onChange={(e) => setEditingLineText(e.target.value)}
+                                onBlur={() => {
+                                  handleCommitLineLength(`${el.id}-seg-${i}`, editingLineText);
+                                  setEditingLineId(null);
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleCommitLineLength(`${el.id}-seg-${i}`, editingLineText);
+                                    setEditingLineId(null);
+                                  } else if (e.key === 'Escape') {
+                                    setEditingLineId(null);
+                                  }
+                                }}
+                                className="w-18 text-center font-bold font-mono text-[11px] text-blue-900 bg-transparent border-0 outline-none p-0 select-text"
+                                placeholder="مثال AS45.0M"
+                                title="اكتب رقم أو طول هذا المقطع مباشرة (مثال: 45 أو AS45.0M أو NG2.30M)"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  handleCommitLineLength(`${el.id}-seg-${i}`, editingLineText);
+                                  setEditingLineId(null);
+                                }}
+                                className="p-0.5 text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 rounded"
+                                title="حفظ"
+                              >
+                                <Check className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        </foreignObject>
+                      ) : (
+                        <g
+                          transform={`translate(${labelX}, ${labelY}) rotate(${textAngle})`}
+                          className="cursor-pointer select-none"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedElementId(el.id);
+                            setEditingLineId(`${el.id}-seg-${i}`);
+                            setEditingLineText(segLabel);
+                          }}
+                          onDoubleClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedElementId(el.id);
+                            setEditingLineId(`${el.id}-seg-${i}`);
+                            setEditingLineText(segLabel);
+                          }}
                         >
-                          {segLabel}
-                        </text>
-                      </g>
+                          <text
+                            x={0}
+                            y={0}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            stroke="#ffffff"
+                            strokeWidth={3}
+                            strokeLinejoin="round"
+                            className="font-mono font-bold text-[12px] select-none"
+                          >
+                            {segLabel}
+                          </text>
+                          <text
+                            x={0}
+                            y={0}
+                            textAnchor="middle"
+                            dominantBaseline="central"
+                            fill={segSoil === 'NG' ? '#854d0e' : segSoil === 'T' ? '#065f46' : '#000000'}
+                            className="font-mono font-bold text-[12px] select-none tracking-tight hover:fill-blue-600 transition-colors"
+                            data-element-id={el.id}
+                          >
+                            <title>انقر لكتابة وتعديل رقم أو طول هذا المقطع مباشرة</title>
+                            {segLabel}
+                          </text>
+                        </g>
+                      )}
                     </g>
                   );
                 })}
@@ -2135,8 +2218,8 @@ export const CadCanvas: React.FC<CadCanvasProps> = ({
                         <g
                           key={`grip-${el.id}-${idx}`}
                           className="cursor-crosshair"
-                          title={isCorner ? 'اسحب مقبض الانحناء لتعديل الزاوية القائمة' : 'اسحب لتغيير طول الكيبل'}
                         >
+                          <title>{isCorner ? 'اسحب مقبض الانحناء لتعديل الزاوية القائمة' : 'اسحب لتغيير طول الكيبل'}</title>
                           <circle
                             cx={pt.x}
                             cy={pt.y}
